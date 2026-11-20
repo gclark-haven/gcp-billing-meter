@@ -4,7 +4,7 @@
 
 <img src="Assets/app-icon.png" width="100" alt="GCP Billing Meter cloud and bar chart icon">
 
-See today's Google Cloud spend in your Mac menu bar. Click the meter for totals and a service breakdown for today, this week, and the current billing period.
+See today's Google Cloud spend in your Mac menu bar, for example `GCP $12.42`. Click the meter for totals and a service breakdown for today, this week, and the current billing period.
 
 **[Download the DMG](https://github.com/gclark-haven/gcp-billing-meter/releases/latest)** · macOS 14 or later · Apple silicon and Intel
 
@@ -14,7 +14,7 @@ See today's Google Cloud spend in your Mac menu bar. Click the meter for totals 
 
 1. Download the DMG from the latest release and open it.
 2. Drag **GCP Billing Meter** to **Applications**, then open it.
-3. Look for the cloud icon in the menu bar. Hold **⌘ Command** and drag the icon next to Ram Meter if you want the two meters together.
+3. Look for **GCP** in the menu bar. **GCP —** means no spend has been reported for today yet. Hold **⌘ Command** and drag the label next to Ram Meter if you want the two meters together.
 
 The app is ad hoc signed. If macOS blocks the downloaded app, follow [Apple's first-launch instructions](https://support.apple.com/en-us/102445). To build your own copy, see [Build from source](#build-from-source).
 

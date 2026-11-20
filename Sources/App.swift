@@ -89,17 +89,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
 
     private func updateStatusItem() {
         guard let button = statusItem?.button else { return }
-        let image = NSImage(systemSymbolName: "cloud", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
-        image?.isTemplate = true
-        button.image = image
-        button.imagePosition = model.menuAmount == nil ? .imageOnly : .imageLeading
-        button.title = model.menuAmount ?? ""
-        button.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-        let accessibility = model.menuAmount.map { "Google Cloud billing, \($0) reported today" }
-            ?? "Google Cloud billing"
-        button.toolTip = accessibility
-        button.setAccessibilityLabel(accessibility)
+        MenuBarSpend(snapshot: model.snapshot).apply(to: button)
     }
 
     @objc private func togglePopover() {

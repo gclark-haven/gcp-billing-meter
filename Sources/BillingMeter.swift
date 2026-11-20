@@ -67,6 +67,38 @@ struct CurrencyTotal: Identifiable {
     var formatted: String { amount.formatted(.currency(code: currency)) }
 }
 
+struct MenuBarSpend {
+    let title: String
+    let detail: String
+
+    init(snapshot: BillingSnapshot?, now: Date = .now) {
+        let lines: [BillingLine]
+        if let snapshot, snapshot.exportedAt != nil {
+            lines = BillingPeriod.today.lines(in: snapshot, at: now)
+        } else {
+            lines = []
+        }
+        let totals = CurrencyTotal.from(lines)
+        guard !totals.isEmpty else {
+            title = "GCP —"
+            detail = "Today's Google Cloud spend is unavailable."
+            return
+        }
+
+        let amounts = totals.map(\.formatted).joined(separator: " · ")
+        title = totals.count <= 2 ? "GCP \(amounts)" : "GCP \(totals.count) currencies"
+        detail = "Google Cloud spend reported today, \(amounts)"
+    }
+
+    @MainActor
+    func apply(to button: NSStatusBarButton) {
+        button.title = title
+        button.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        button.toolTip = detail
+        button.setAccessibilityLabel(detail)
+    }
+}
+
 @MainActor
 final class BillingModel: ObservableObject {
     static let configKey = "BillingConfiguration"
@@ -137,13 +169,6 @@ final class BillingModel: ObservableObject {
                 self.error = error.localizedDescription
             }
         }
-    }
-
-    var menuAmount: String? {
-        guard let snapshot, snapshot.exportedAt != nil,
-              BillingSource.pacificCalendar.isDateInToday(snapshot.fetchedAt) else { return nil }
-        let totals = CurrencyTotal.from(snapshot.today)
-        return totals.count == 1 ? totals.first?.formatted : nil
     }
 
     func syncLoginStatus() {

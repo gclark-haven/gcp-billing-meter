@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 @main
@@ -29,6 +30,17 @@ enum BillingChecks {
         let totals = CurrencyTotal.from(snapshot.today)
         precondition(totals.map(\.currency) == ["CAD", "USD"])
         precondition(totals.map(\.amount) == [7.25, 12])
+        let mixed = MenuBarSpend(snapshot: snapshot, now: pacificSunday)
+        precondition(mixed.title == "GCP " + totals.map(\.formatted).joined(separator: " · "))
+        let singleCurrency = BillingSnapshot(fetchedAt: snapshot.fetchedAt, exportedAt: snapshot.exportedAt,
+                                             today: snapshot.today.filter { $0.currency == "USD" },
+                                             week: [], period: [])
+        let amount = MenuBarSpend(snapshot: singleCurrency, now: pacificSunday)
+        let waiting = MenuBarSpend(snapshot: nil, now: pacificSunday)
+        precondition(amount.title == "GCP " + totals[1].formatted)
+        precondition(waiting.title == "GCP —")
+        precondition(MenuBarSpend(snapshot: singleCurrency, now: pacificMonday).title == waiting.title)
+        checkStatusButton(waiting: waiting, amount: amount)
         precondition(BillingPeriod.today.lines(in: snapshot, at: pacificMonday).isEmpty)
         precondition(BillingPeriod.week.lines(in: snapshot, at: pacificMonday).isEmpty)
         precondition(BillingPeriod.invoice.lines(in: snapshot, at: pacificMonday).contains { $0.service == "Tax" })
@@ -56,6 +68,24 @@ enum BillingChecks {
         await finish(model)
         precondition(model.snapshot == snapshot && model.error == nil)
         print("Billing checks passed")
+    }
+
+    @MainActor private static func checkStatusButton(waiting: MenuBarSpend, amount: MenuBarSpend) {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        defer { NSStatusBar.system.removeStatusItem(item) }
+        guard let button = item.button else { preconditionFailure("Missing native status button") }
+
+        waiting.apply(to: button)
+        precondition(button.title == waiting.title && button.accessibilityLabel() == waiting.detail)
+        RunLoop.current.run(until: .now.addingTimeInterval(0.05))
+        let waitingWidth = button.bounds.width
+        amount.apply(to: button)
+        precondition(button.title == amount.title && button.accessibilityLabel() == amount.detail)
+        RunLoop.current.run(until: .now.addingTimeInterval(0.05))
+        let titleWidth = button.attributedTitle.size().width
+        precondition(button.bounds.width >= titleWidth && button.bounds.width > waitingWidth)
     }
 
     private static func date(_ iso: String) -> Date {
