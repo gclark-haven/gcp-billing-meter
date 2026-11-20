@@ -32,6 +32,7 @@ The active CLI account needs permission to read the export and run jobs in the q
 - **Today** uses usage from midnight Pacific time. **This week** uses usage from Monday through today, also in Pacific time.
 - **Billing period** uses the current invoice month. It includes any applicable taxes, adjustments and late-posted items Google assigns to that period. This month's total can change until Google issues the invoice.
 - Amounts include credits. When more than one currency is present, each currency has its own total.
+- A one-time Google Cloud Reports snapshot, when configured locally, shows its capture time and leaves the billing period pending. The app switches to BigQuery automatically after it receives today’s exported charges.
 - Services publish billing data on different schedules. The export timestamp tells you how fresh the source is. New usage can take more than 24 hours to appear. [Google Cloud billing export schema](https://docs.cloud.google.com/billing/docs/how-to/export-data-bigquery-tables/standard-usage)
 
 ## Open at login

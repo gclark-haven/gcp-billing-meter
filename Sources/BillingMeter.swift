@@ -99,6 +99,13 @@ struct MenuBarSpend {
     }
 }
 
+struct BillingReportSeed: Codable, Equatable, Sendable {
+    let table: String
+    let capturedAt: Date
+    let today: [BillingLine]
+    let week: [BillingLine]
+}
+
 @MainActor
 final class BillingModel: ObservableObject {
     static let configKey = "BillingConfiguration"
@@ -110,22 +117,37 @@ final class BillingModel: ObservableObject {
 
     @Published private(set) var configuration: BillingConfiguration?
     @Published private(set) var snapshot: BillingSnapshot?
+    @Published private(set) var usingReportSnapshot = false
     @Published private(set) var isLoading = false
     @Published private(set) var error: String?
     @Published private(set) var loginEnabled = false
     @Published private(set) var loginError: String?
 
     init(defaults: UserDefaults = .standard, initial: BillingSnapshot? = nil,
+         reportSnapshotURL: URL = FileManager.default.homeDirectoryForCurrentUser
+             .appendingPathComponent("Library/Application Support/GCP Billing Meter/report-snapshot.json"),
          fetch: @escaping @Sendable (BillingConfiguration) async throws -> BillingSnapshot = { configuration in
              try await BillingSource.fetch(configuration)
          }) {
         self.defaults = defaults
         self.fetch = fetch
         self.snapshot = initial
+        let decoder = JSONDecoder()
         if let data = defaults.data(forKey: Self.configKey),
-           let saved = try? JSONDecoder().decode(BillingConfiguration.self, from: data) {
+           let saved = try? decoder.decode(BillingConfiguration.self, from: data) {
             configuration = try? BillingConfiguration(table: saved.table, queryProject: saved.queryProject,
                                                       location: saved.location)
+        }
+        decoder.dateDecodingStrategy = .iso8601
+        let now = Date.now
+        if initial == nil, let configuration,
+           let data = try? Data(contentsOf: reportSnapshotURL),
+           let report = try? decoder.decode(BillingReportSeed.self, from: data),
+           report.table == configuration.table,
+           report.capturedAt <= now, BillingPeriod.today.contains(report.capturedAt, at: now) {
+            snapshot = BillingSnapshot(fetchedAt: report.capturedAt, exportedAt: report.capturedAt,
+                                       today: report.today, week: report.week, period: [])
+            usingReportSnapshot = true
         }
         syncLoginStatus()
     }
@@ -139,6 +161,7 @@ final class BillingModel: ObservableObject {
             refreshTask?.cancel()
             refreshTask = nil
             snapshot = nil
+            usingReportSnapshot = false
             lastAttemptAt = nil
             error = nil
             isLoading = false
@@ -154,21 +177,37 @@ final class BillingModel: ObservableObject {
     func refresh() {
         guard let configuration, refreshTask == nil else { return }
         let requestedGeneration = generation
+        expireReportSnapshot(at: .now)
         lastAttemptAt = .now
         isLoading = true
         refreshTask = Task { [weak self, fetch] in
             let result = await Result { try await fetch(configuration) }
             guard let self, self.generation == requestedGeneration else { return }
+            let now = Date.now
+            self.expireReportSnapshot(at: now)
             self.refreshTask = nil
             self.isLoading = false
             switch result {
             case .success(let snapshot):
-                self.snapshot = snapshot
+                let hasLiveToday = snapshot.exportedAt != nil
+                    && !BillingPeriod.today.lines(in: snapshot, at: now).isEmpty
+                if !self.usingReportSnapshot || hasLiveToday {
+                    self.snapshot = snapshot
+                    self.usingReportSnapshot = false
+                }
                 self.error = nil
             case .failure(let error):
                 self.error = error.localizedDescription
             }
         }
+    }
+
+    private func expireReportSnapshot(at now: Date) {
+        guard usingReportSnapshot, let snapshot, !BillingPeriod.today.contains(snapshot.fetchedAt, at: now) else {
+            return
+        }
+        self.snapshot = nil
+        usingReportSnapshot = false
     }
 
     func syncLoginStatus() {

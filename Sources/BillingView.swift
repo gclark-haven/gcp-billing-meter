@@ -82,6 +82,7 @@ struct BillingView: View {
     private func dashboard(_ snapshot: BillingSnapshot) -> some View {
         let now = isSample ? snapshot.fetchedAt : Date.now
         let periodIsCurrent = period.contains(snapshot.fetchedAt, at: now)
+        let invoicePending = model.usingReportSnapshot && period == .invoice
         let lines = period.lines(in: snapshot, at: now).sorted {
             if $0.currency != $1.currency { return $0.currency < $1.currency }
             if abs($0.amount) != abs($1.amount) { return abs($0.amount) > abs($1.amount) }
@@ -109,9 +110,11 @@ struct BillingView: View {
 
             if lines.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(periodIsCurrent ? "No charges exported for this range yet." : "Waiting for a refresh for this range.")
+                    Text(invoicePending ? "Waiting for the BigQuery billing period." :
+                         periodIsCurrent ? "No charges exported for this range yet." : "Waiting for a refresh for this range.")
                         .font(.system(size: 12, weight: .medium))
-                    Text("Google Cloud can report charges after the usage date.")
+                    Text(invoicePending ? "Today's and this week's totals come from Google Cloud Reports." :
+                         "Google Cloud can report charges after the usage date.")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
@@ -164,6 +167,8 @@ struct BillingView: View {
 
     private func rangeButton(_ option: BillingPeriod, totals: [CurrencyTotal]) -> some View {
         let selected = period == option
+        let emptyState = model.usingReportSnapshot && option == .invoice
+            ? "Waiting for BigQuery" : "No charges exported"
         let amount = totals.isEmpty ? "—" : totals.count == 1 ? totals[0].formatted : "Multiple currencies"
         return Button { period = option } label: {
             VStack(alignment: .leading, spacing: 6) {
@@ -189,7 +194,7 @@ struct BillingView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(option.rawValue)
-        .accessibilityValue(totals.isEmpty ? "No charges exported" : amount)
+        .accessibilityValue(totals.isEmpty ? emptyState : amount)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -292,6 +297,10 @@ struct BillingView: View {
             } else if let loginError = model.loginError {
                 Text(loginError)
                 Spacer()
+            } else if model.usingReportSnapshot, let snapshot = model.snapshot {
+                Text("Reports snapshot · \(snapshot.fetchedAt.formatted(.dateTime.hour().minute()))")
+                Spacer()
+                Text("Waiting for BigQuery")
             } else if let snapshot = model.snapshot, let exportedAt = snapshot.exportedAt {
                 if let error = model.error {
                     Text("Refresh failed · \(error)")

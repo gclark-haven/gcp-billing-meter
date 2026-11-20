@@ -67,7 +67,49 @@ enum BillingChecks {
         model.refresh()
         await finish(model)
         precondition(model.snapshot == snapshot && model.error == nil)
+        try await checkReportSnapshot(defaults: defaults, configuration: configuration)
         print("Billing checks passed")
+    }
+
+    @MainActor private static func checkReportSnapshot(defaults: UserDefaults,
+                                                        configuration: BillingConfiguration) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let seedURL = directory.appendingPathComponent("report-snapshot.json")
+        let now = Date.now
+        let line = BillingLine(service: "Cloud Run", currency: "USD", amount: 8.34)
+        let seed = BillingReportSeed(table: configuration.table, capturedAt: now, today: [line], week: [line])
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(seed).write(to: seedURL)
+
+        let incomplete = BillingSnapshot(fetchedAt: now, exportedAt: now, today: [], week: [], period: [])
+        let stub = Stub(snapshot: incomplete)
+        let model = BillingModel(defaults: defaults, reportSnapshotURL: seedURL, fetch: { _ in try await stub.fetch() })
+        precondition(model.usingReportSnapshot && model.snapshot?.today == [line] && model.snapshot?.period.isEmpty == true)
+
+        await stub.setOffline(true)
+        model.refresh()
+        await finish(model)
+        precondition(model.usingReportSnapshot && model.snapshot?.week == [line] && model.error != nil)
+
+        await stub.setOffline(false)
+        model.refresh()
+        await finish(model)
+        precondition(model.usingReportSnapshot && model.snapshot?.today == [line])
+
+        let exported = BillingSnapshot(fetchedAt: now, exportedAt: now, today: [line], week: [line], period: [line])
+        await stub.setSnapshot(exported)
+        model.refresh()
+        await finish(model)
+        precondition(!model.usingReportSnapshot && model.snapshot == exported)
+
+        let other = BillingReportSeed(table: "other-project.dataset.table", capturedAt: now, today: [line], week: [line])
+        try encoder.encode(other).write(to: seedURL)
+        let mismatched = BillingModel(defaults: defaults, reportSnapshotURL: seedURL)
+        precondition(!mismatched.usingReportSnapshot && mismatched.snapshot == nil)
     }
 
     @MainActor private static func checkStatusButton(waiting: MenuBarSpend, amount: MenuBarSpend) {
@@ -101,12 +143,13 @@ enum BillingChecks {
 }
 
 private actor Stub {
-    let snapshot: BillingSnapshot
+    var snapshot: BillingSnapshot
     var offline = false
 
     init(snapshot: BillingSnapshot) { self.snapshot = snapshot }
 
     func setOffline(_ offline: Bool) { self.offline = offline }
+    func setSnapshot(_ snapshot: BillingSnapshot) { self.snapshot = snapshot }
 
     func fetch() throws -> BillingSnapshot {
         if offline { throw BillingSourceError.queryFailed }
